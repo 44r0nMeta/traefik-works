@@ -1,0 +1,69 @@
+version: "3.7"
+
+services:
+  traefik:
+    image: traefik:2.8
+    ports:
+      - "80:80"
+      - "443:443"
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --pilot.token=2b745519-36a6-4668-b27e-1d1bb362110d
+      - --experimental.plugins.traefik-modsecurity-plugin.modulename=github.com/acouvreur/traefik-modsecurity-plugin
+      - --experimental.plugins.traefik-modsecurity-plugin.version=v1.2.1
+      - --providers.docker=true
+      - --entrypoints.http.address=:80
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik-data/traefik.yml:/traefik.yml:ro
+      - ./traefik-data/acme.json:/acme.json
+      - ./traefik-data/configurations:/configurations
+      - '/var/run/docker.sock:/var/run/docker.sock'    
+    networks:
+      - proxy
+
+    environment:
+      - TRAEFIK_PILOT_TOKEN
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.traefik.loadbalancer.server.port=8080
+      - traefik.http.middlewares.waf.plugin.traefik-modsecurity-plugin.modSecurityUrl=http://waf:80
+      - traefik.http.middlewares.waf.plugin.traefik-modsecurity-plugin.maxBodySize=10485760
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik-secure.middlewares=user-auth@file"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+  waf:
+    image: owasp/modsecurity-crs:apache
+    environment:
+      - PARANOIA=1
+      - ANOMALY_INBOUND=10
+      - ANOMALY_OUTBOUND=5
+      - BACKEND=http://dummy
+    
+    networks:
+      - proxy
+   
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.portainer-secure.entrypoints=websecure"
+      - "traefik.http.routers.portainer-secure.rule=Host(`waf.localhost`)"     
+
+  dummy:
+    image: containous/whoami
+
+  website:
+    image: containous/whoami
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.website.rule=PathPrefix(`/website`)
+      - traefik.http.routers.website.middlewares=waf@docker
+
+networks:
+  proxy:
+    external: true

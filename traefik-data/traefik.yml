@@ -1,0 +1,41 @@
+api:
+  dashboard: true
+
+entryPoints:
+  web:
+    address: :80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+
+  websecure:
+    address: :443
+    http:
+      middlewares:
+        - secureHeaders@file
+      tls:
+        certResolver: letsencrypt
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+  file:
+    filename: /configurations/dynamic.yml
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: hat143996@gmail.com
+      storage: acme.json
+      keyType: EC384
+      httpChallenge:
+        entryPoint: web
+pilot:
+    token: "1779a784-bb58-4aab-bf35-d878ed4bcf8a"
+experimental:
+    plugins:
+        traefik-modsecurity-plugin:
+            moduleName: "github.com/acouvreur/traefik-modsecurity-plugin"
+            version: "v1.2.1"

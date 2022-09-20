@@ -1,0 +1,94 @@
+version: "3"
+
+services:
+  traefik:
+    image: traefik:2.8
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    ports:
+      - 80:80
+      - 443:443
+    links:
+      - waf
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik-data/traefik.yml:/traefik.yml:ro
+      - ./traefik-data/acme.json:/acme.json
+      - ./traefik-data/configurations:/configurations
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik-secure.middlewares=user-auth@file"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+      - traefik.http.middlewares.waf.plugin.traefik-modsecurity-plugin.modSecurityUrl=http://waf:80
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./portainer-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.portainer-secure.entrypoints=websecure"
+      - "traefik.http.routers.portainer-secure.rule=Host(`portainer.localhost`)"
+      - "traefik.http.routers.portainer-secure.service=portainer"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+
+  waf:
+    image: owasp/modsecurity-crs:apache
+    container_name: waf
+    environment:
+      - PARANOIA=1
+      - ANOMALY_INBOUND=5
+      - ANOMALY_OUTBOUND=5
+      - BACKEND=http://dummy
+      #- SERVERNAME=waf.localhost
+    networks:
+      - waf
+    #ports:
+      #- 8000:80
+    #labels:
+      #- "traefik.enable=true"
+      #- "traefik.docker.network=waf"
+      #- "traefik.http.routers.waf.entrypoints=web"
+      #- "traefik.http.routers.waf.rule=Host(`waf.localhost`)"
+      #- "traefik.http.routers.waf.service=waf"
+
+
+  dummy:
+    image: containous/whoami
+    networks:
+      - waf
+    
+  website:
+    image: containous/whoami
+    labels:
+      - traefik.enable=true
+      #- traefik.http.routers.site-secure.rule=PathPrefix(`/website`)
+      - traefik.http.routers.website.middlewares=waf@docker
+      - "traefik.docker.network=waf"
+      - "traefik.http.routers.website.entrypoints=websecure"
+      - "traefik.http.routers.website.rule=Host(`test.localhost`)"
+    networks:
+      - waf
+  
+networks:
+  proxy:
+    external: true
+  waf:
+    external: true
